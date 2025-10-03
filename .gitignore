@@ -1,0 +1,44 @@
+# Configuration files with sensitive API keys
+config.py
+
+# Downloaded files
+downloads/
+*.pdf
+*.docx
+*.doc
+*.xlsx
+*.xls
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Test outputs
+test_output/
+temp/
+tmp/
+
+# Log files
+*.log
+csv/*
