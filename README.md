@@ -90,7 +90,7 @@ python setup_config.py
 
 ## 📊 CSV Format
 
-Your CSV file should have a column named `"Pure ID"` containing Pure IDs:
+Your CSV file should have a column named `"Pure ID"` containing Pure IDs (it can be any column):
 
 ```csv
 Pure ID,Title,Year
@@ -128,14 +128,6 @@ To only download specific file types:
 ```python
 # In config.py
 DOWNLOAD_FILE_TYPES = [".pdf", ".docx"]  # Only PDFs and Word docs
-```
-
-### Search Single ID
-
-Use the standalone search utility:
-
-```bash
-python search_by_id.py 27139086
 ```
 
 ## 🔍 How It Works
@@ -208,21 +200,9 @@ cd tests
 python run_tests.py
 ```
 
-## 📄 License
-
-[Add your license here]
-
-## 👥 Credits
-
-Developed for Scion's Forest Genetic Resources AI Tool project.
-
 ## 🔗 Resources
 
 - [Pure API Documentation](https://support.elsevier.com/app/answers/detail/a_id/28518/supporthub/pure/)
 - [Pure API Cheat Sheet](pure_api_cheatsheet.md)
 
 ---
-
-**Version**: 2.0  
-**Last Updated**: 2024  
-**Status**: ✅ Production Ready
