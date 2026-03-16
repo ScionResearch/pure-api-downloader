@@ -1,228 +1,266 @@
-# Pure API File Downloader
+# Pure API Research Output Workflow
 
-A Python tool to batch download research output files from the Elsevier Pure API using a CSV list of Pure IDs.
+This repository now supports a staged workflow for working with Elsevier Pure research outputs:
 
-## 📋 Features
+1. **search the API with keywords**
+2. **generate a review CSV**
+3. **edit that CSV if needed**
+4. **download files from the reviewed/approved CSV**
 
-- ✅ Batch download files from Pure API using CSV input
-- ✅ Supports both numeric Pure IDs and UUIDs
-- ✅ Automatic file type detection (PDF, DOCX, etc.)
-- ✅ Configurable download limits for testing
-- ✅ Comprehensive error handling and logging
-- ✅ CSV encoding auto-detection (UTF-8, Windows cp1252, Latin-1)
-- ✅ Secure configuration management
+It still includes the original direct CSV downloader, but the primary workflow is now the safer discovery → review → download pipeline.
 
-## 🚀 Quick Start
+## What the codebase does
 
-### 1. Initial Setup
+- Search Pure research outputs by keyword
+- Enrich each result with file metadata from `electronicVersions`
+- Generate a CSV you can inspect and edit
+- Generate a summary markdown report for quick review
+- Download approved PDF files from the reviewed CSV
+- Resume interrupted download runs using a checkpoint file
+- Skip already downloaded files safely on reruns
+- Fall back to the original “download from a CSV of Pure IDs” workflow when needed
+
+## Main workflow
+
+### 1. Configure the project
+
+Use the interactive setup helper:
 
 ```bash
-# First time setup - configure your API credentials
 python setup_config.py
 ```
 
-This will prompt you for:
-- Your Pure API key
-- Your institution's Pure API URL
-- CSV file path
-- Download settings
+Or edit `config.py` directly.
 
-### 2. Run the Downloader
+Important settings in `config.py`:
+
+- `PURE_API_KEY`
+- `BASE_API_URL`
+- `DISCOVERY_KEYWORD_THEMES`
+- `DISCOVERY_PAGE_SIZE`
+- `DISCOVERY_MAX_RESULTS_PER_KEYWORD`
+- `DISCOVERY_OUTPUT_CSV`
+- `DISCOVERY_SUMMARY_REPORT`
+- `APPROVED_DOWNLOAD_INPUT_CSV`
+- `APPROVED_DOWNLOAD_OUTPUT_DIR`
+- `APPROVED_DOWNLOAD_CHECKPOINT_FILE`
+- `APPROVED_DOWNLOAD_PILOT_SIZE`
+
+### 2. Generate a discovery CSV from the API
+
+Run the discovery workflow:
+
+```bash
+python pure_discovery.py
+```
+
+This will:
+
+1. test API connectivity
+2. search Pure using the configured keyword themes
+3. deduplicate matches
+4. enrich results with file metadata
+5. classify results such as:
+   - `downloadable_pdf`
+   - `has_non_pdf_only`
+   - `restricted_or_unknown_access`
+   - `no_files`
+6. write:
+   - `discovery_candidates.csv`
+   - `discovery_summary.md`
+
+### 3. Edit the generated CSV
+
+Open `discovery_candidates.csv` and review the rows.
+
+Useful columns include:
+
+- `title`
+- `year`
+- `output_type`
+- `match_score`
+- `matched_terms`
+- `matched_fields`
+- `download_status`
+- `first_open_pdf_name`
+- `first_open_pdf_url`
+- `reviewer_decision`
+- `reviewer_notes`
+
+You can edit the CSV manually to:
+
+- remove rows you don’t want
+- add notes
+- explicitly mark rows with `reviewer_decision=approve`
+
+If you don’t mark approvals, the approved downloader can still proceed after explicit confirmation by treating all `downloadable_pdf` rows as the current proceed set.
+
+### 4. Download files from the reviewed CSV
+
+Run the approved downloader:
+
+```bash
+python pure_approved_downloader.py
+```
+
+This will:
+
+1. read `approved_candidates.csv` if it exists
+2. otherwise prepare it from `discovery_candidates.csv`
+3. download up to `APPROVED_DOWNLOAD_PILOT_SIZE` items
+4. save files into `downloads/approved_pilot`
+5. track state in `approved_download_checkpoint.json`
+
+On reruns it will:
+
+- skip completed items already in the checkpoint
+- skip existing files when configured to do so
+- resume cleanly after interruption
+
+## Alternative workflow: direct Pure ID CSV download
+
+If you already have a CSV containing a `Pure ID` column, you can still use the original downloader:
 
 ```bash
 python download_pure_file.py
 ```
 
-The script will:
-1. Test API connection
-2. Load Pure IDs from your CSV
-3. Download all attached files to the `downloads/` directory
+That workflow:
 
-## 📁 File Structure
+- loads a CSV of Pure IDs
+- detects whether IDs resolve as research outputs
+- fetches `electronicVersions`
+- downloads the first suitable file it finds
 
-```
-pure_downloader/
-├── config.py              # Your configuration (gitignored - contains API key)
-├── config.template.py     # Template for creating config.py
-├── download_pure_file.py  # Main downloader script
-├── setup_config.py        # Interactive configuration utility
-├── .gitignore            # Protects sensitive config files
-├── README.md             # This file
-└── downloads/            # Downloaded files go here (created automatically)
-```
+This is useful for targeted downloads, but for large discovery work the newer staged workflow is strongly recommended.
 
-## ⚙️ Configuration
+## Current key files
 
-### Option 1: Interactive Setup (Recommended)
+- `config.py` — live configuration
+- `config.template.py` — starter template
+- `setup_config.py` — interactive config helper
+- `pure_discovery.py` — keyword search and review CSV generation
+- `pure_approved_downloader.py` — approved/proceed download workflow with checkpointing
+- `download_pure_file.py` — original Pure ID downloader
+- `discovery_candidates.csv` — generated discovery CSV
+- `discovery_summary.md` — generated summary report
+- `approved_candidates.csv` — prepared approved/proceed CSV
+- `approved_download_checkpoint.json` — resumable download checkpoint
+- `downloads/approved_pilot/` — downloaded pilot files
 
-```bash
-python setup_config.py
-```
+## Example commands
 
-### Option 2: Manual Configuration
-
-1. Copy the template:
-   ```bash
-   copy config.template.py config.py
-   ```
-
-2. Edit `config.py` with your settings:
-   ```python
-   PURE_API_KEY = "your-api-key-here"
-   BASE_API_URL = "https://yourinstitution.elsevierpure.com/ws/api"
-   CSV_FILE_PATH = "example.csv"
-   MAX_DOWNLOADS = None  # Or set to a number for testing
-   ```
-
-### Configuration Options
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `PURE_API_KEY` | Your Pure API key | *Required* |
-| `BASE_API_URL` | Your Pure API endpoint | *Required* |
-| `CSV_FILE_PATH` | Path to CSV with Pure IDs | `"your_file.csv"` |
-| `ID_COLUMN` | CSV column with IDs | `"Pure ID"` |
-| `OUTPUT_DIRECTORY` | Where to save files | `"downloads"` |
-| `MAX_DOWNLOADS` | Limit for testing | `None` (all entries, or set to number for testing) |
-| `DOWNLOAD_FILE_TYPES` | Filter file types | `['.pdf', '.docx', '.doc']` |
-| `REQUEST_TIMEOUT` | API timeout seconds | `300` |
-| `DOWNLOAD_CHUNK_SIZE` | Streaming chunk size | `8192` |
-
-## 📊 CSV Format
-
-Your CSV file should have a column named `"Pure ID"` containing Pure IDs:
-
-```csv
-Pure ID,Title,Year
-27139086,"Forest Protection Research",2023
-46773789,"Cypress Stakes Study",2022
-14344978,"Genetic Resources",2021
-```
-
-**Supported ID formats:**
-- Numeric Pure IDs: `27139086`, `46773789`
-- UUIDs: `12345678-1234-5678-1234-567812345678`
-
-## 🔧 Advanced Usage
-
-### Test with Limited Downloads
-
-For testing, set `MAX_DOWNLOADS` to a small number:
-
-```python
-# In config.py
-MAX_DOWNLOADS = 3  # Download only first 3 entries
-```
-
-### Download All Entries
-
-```python
-# In config.py
-MAX_DOWNLOADS = None  # Download everything
-```
-
-### Filter File Types
-
-To only download specific file types:
-
-```python
-# In config.py
-DOWNLOAD_FILE_TYPES = [".pdf", ".docx"]  # Only PDFs and Word docs
-```
-
-### Search Single ID
-
-Use the standalone search utility:
+### Run discovery with configured keywords
 
 ```bash
-python search_by_id.py 27139086
+python pure_discovery.py
 ```
 
-## 🔍 How It Works
-
-1. **ID Resolution**: The script accepts numeric Pure IDs or UUIDs
-   - Numeric IDs are automatically converted to UUIDs via API
-   
-2. **File Discovery**: Files are extracted from the `electronicVersions` field
-   - Not from `/files` endpoint (Pure API quirk)
-   
-3. **Download**: Files are streamed in chunks to handle large files efficiently
-
-4. **Naming**: Files are saved with sanitized titles and original extensions
-
-## 🛡️ Security
-
-- **API Key Protection**: `config.py` is automatically gitignored
-- **Template Provided**: `config.template.py` shows structure without sensitive data
-- **Never commit** your actual `config.py` to version control
-
-## 🐛 Troubleshooting
-
-### Configuration Issues
+### Run discovery with a temporary focused keyword set
 
 ```bash
-# Validate current configuration
-python -c "import config; print(config.validate_config())"
-
-# Reconfigure interactively
-python setup_config.py
+python -c "import pure_discovery as d; print(d.run_discovery_workflow(keyword_themes={'focus':['decay','durability','cypress']}))"
 ```
 
-### API Connection Failed
+### Run the approved pilot downloader
 
-1. Check `PURE_API_KEY` is correct in `config.py`
-2. Verify `BASE_API_URL` format: `https://[institution].elsevierpure.com/ws/api`
-3. Test network connectivity
-4. Contact Pure administrator for API access
+```bash
+python pure_approved_downloader.py
+```
 
-### CSV Encoding Errors
+### Continue past the pilot size
 
-The script auto-detects encoding (UTF-8, cp1252, Latin-1, ISO-8859-1). If issues persist:
-- Try re-exporting CSV from Pure with UTF-8 encoding
-- Check for special characters in titles
+```bash
+python -c "import pure_approved_downloader as p; print(p.run_approved_download_pilot(pilot_size=257))"
+```
 
-### No Files Found (404 Errors)
+### Use the original direct CSV downloader
 
-- Verify the Pure ID exists and has attached files
-- Check you have permission to access the research output
-- Use `search_by_id.py` to inspect the full API response
+```bash
+python download_pure_file.py
+```
 
-## 📝 API Reference
+## Configuration notes
 
-### Pure API Endpoints Used
+### Discovery settings
 
-- `GET /research-outputs/{id}` - Get research output by numeric ID
-- `GET /research-outputs/{uuid}` - Get research output by UUID
-- `GET /research-outputs/{uuid}/files/{fileId}/{filename}` - Download file
+- `DISCOVERY_KEYWORD_THEMES` controls what gets searched
+- `DISCOVERY_PAGE_SIZE` controls API page size
+- `DISCOVERY_MAX_RESULTS_PER_KEYWORD` caps search breadth
+- `DISCOVERY_ALLOWED_ACCESS_TYPES` determines what counts as safe/open for download
 
-### Authentication
+### Approved download settings
 
-The API uses API key authentication via the `api_key` query parameter.
+- `APPROVED_DOWNLOAD_PILOT_SIZE` controls the default number downloaded per run
+- `APPROVED_DOWNLOAD_RETRY_ATTEMPTS` controls retries
+- `APPROVED_DOWNLOAD_RETRY_DELAY_SECONDS` controls retry delay
+- `APPROVED_DOWNLOAD_SKIP_EXISTING` prevents duplicate file writes
 
-## 🧪 Testing
+## Testing
 
-Test files are located in `tests/`:
+Run everything:
 
 ```bash
 cd tests
-python run_tests.py
+python run_tests.py all
 ```
 
-## 📄 License
+Run the discovery tests only:
 
-[Add your license here]
+```bash
+cd tests
+python run_tests.py discovery
+```
 
-## 👥 Credits
+Run the approved downloader tests only:
 
-Developed for Scion's Forest Genetic Resources AI Tool project.
+```bash
+cd tests
+python run_tests.py approved
+```
 
-## 🔗 Resources
+Run the direct downloader tests only:
 
-- [Pure API Documentation](https://support.elsevier.com/app/answers/detail/a_id/28518/supporthub/pure/)
-- [Pure API Cheat Sheet](pure_api_cheatsheet.md)
+```bash
+cd tests
+python run_tests.py download
+```
+
+## Troubleshooting
+
+### API connection problems
+
+- confirm `PURE_API_KEY`
+- confirm `BASE_API_URL` ends with `/ws/api`
+- check network access to the Pure instance
+
+### Discovery is too broad
+
+- reduce `DISCOVERY_MAX_RESULTS_PER_KEYWORD`
+- narrow `DISCOVERY_KEYWORD_THEMES`
+- use more specific terms such as `decay`, `stakes`, `decking`, `heartwood`
+
+### Downloads stop midway
+
+- rerun `pure_approved_downloader.py`
+- it will resume using `approved_download_checkpoint.json`
+
+### Wrong files are being prioritized
+
+- adjust keyword themes
+- inspect `matched_terms`, `match_score`, and `download_status` in the discovery CSV
+
+## Security
+
+- `config.py` contains secrets and should not be committed
+- keep API credentials local
+- review discovery results before bulk downloading when possible
+
+## Resources
+
+- `pure_api_cheatsheet.md`
 
 ---
 
-**Version**: 2.0  
-**Last Updated**: 2024  
-**Status**: ✅ Production Ready
+**Status:** Active workflow: search → review CSV → approved/proceed download  
+**Repository:** `pure-api-downloader`

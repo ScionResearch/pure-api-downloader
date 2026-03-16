@@ -12,6 +12,16 @@ import os
 import re
 
 
+def get_config_file_path():
+    """Return config.py path, allowing tests or advanced users to override it."""
+    override_path = os.environ.get("PURE_DOWNLOADER_CONFIG_PATH")
+    if override_path:
+        return override_path
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(script_dir, "config.py")
+
+
 def setup_configuration():
     """Interactive setup for Pure API configuration."""
 
@@ -19,9 +29,11 @@ def setup_configuration():
     print("=" * 50)
     print()
 
-    # Get current script directory
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    config_file = os.path.join(script_dir, "config.py")
+    try:
+        config_file = get_config_file_path()
+    except Exception as e:
+        print(f"❌ Error locating config.py: {e}")
+        return False
 
     # Check if config.py exists
     if not os.path.exists(config_file):
@@ -33,8 +45,12 @@ def setup_configuration():
     print()
 
     # Read current configuration
-    with open(config_file, "r", encoding="utf-8") as f:
-        content = f.read()
+    try:
+        with open(config_file, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception as e:
+        print(f"❌ Error reading configuration: {e}")
+        return False
 
     # Extract current values using more flexible regex
     api_key_match = re.search(r'PURE_API_KEY\s*=\s*"([^"]*)"', content)
@@ -173,27 +189,27 @@ def setup_configuration():
     try:
         # Update the configuration in the file
         content = re.sub(
-            r'(PURE_API_KEY\s*=\s*)"[^"]*"', 
-            f'\\1"{new_api_key}"', 
-            content
+            r'(PURE_API_KEY\s*=\s*)"[^"]*"',
+            lambda m: f'{m.group(1)}"{new_api_key}"',
+            content,
         )
 
         content = re.sub(
-            r'(BASE_API_URL\s*=\s*)"[^"]*"', 
-            f'\\1"{new_base_url}"', 
-            content
+            r'(BASE_API_URL\s*=\s*)"[^"]*"',
+            lambda m: f'{m.group(1)}"{new_base_url}"',
+            content,
         )
 
         content = re.sub(
-            r'(CSV_FILE_PATH\s*=\s*)"[^"]*"', 
-            f'\\1"{new_csv_file}"', 
-            content
+            r'(CSV_FILE_PATH\s*=\s*)"[^"]*"',
+            lambda m: f'{m.group(1)}"{new_csv_file}"',
+            content,
         )
 
         content = re.sub(
-            r'(MAX_DOWNLOADS\s*=\s*)\w+', 
-            f'\\1{new_max_downloads}', 
-            content
+            r'(MAX_DOWNLOADS\s*=\s*)\w+',
+            lambda m: f'{m.group(1)}{new_max_downloads}',
+            content,
         )
 
         # Write back to file
@@ -218,16 +234,18 @@ def setup_configuration():
 
 def validate_current_config():
     """Check if current configuration is valid."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    config_file = os.path.join(script_dir, "config.py")
-
-    if not os.path.exists(config_file):
-        return False, "config.py not found"
-
     try:
+        config_file = get_config_file_path()
+
+        if not os.path.exists(config_file):
+            return False, "config.py not found"
+
+        config_dir = os.path.dirname(config_file)
+
         # Import and validate
         import sys
-        sys.path.insert(0, script_dir)
+        if config_dir not in sys.path:
+            sys.path.insert(0, config_dir)
         import config
         
         is_valid, message = config.validate_config()

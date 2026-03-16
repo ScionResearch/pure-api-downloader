@@ -25,6 +25,8 @@ class TestSetupConfiguration(unittest.TestCase):
         """Set up test environment."""
         self.temp_dir = tempfile.mkdtemp()
         self.config_file = os.path.join(self.temp_dir, 'config.py')
+        self.env_patcher = patch.dict(os.environ, {'PURE_DOWNLOADER_CONFIG_PATH': self.config_file})
+        self.env_patcher.start()
         
         # Create a minimal config.py for testing
         self.config_content = '''
@@ -38,6 +40,7 @@ MAX_DOWNLOADS = 3
 
     def tearDown(self):
         """Clean up test environment."""
+        self.env_patcher.stop()
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
@@ -176,11 +179,11 @@ MAX_DOWNLOADS = 3
 
     @patch('builtins.print')
     @patch('os.path.exists')
-    @patch('builtins.open', new_callable=mock_open)
+    @patch('builtins.open', new_callable=mock_open, read_data='PURE_API_KEY = "old-key"')
     def test_setup_configuration_exception(self, mock_file, mock_exists, mock_print):
         """Test setup when an exception occurs."""
         mock_exists.return_value = True
-        mock_file.side_effect = Exception("File error")
+        mock_file.side_effect = [Exception("File error")]
         
         result = setup_config.setup_configuration()
         
@@ -194,9 +197,13 @@ class TestValidateCurrentConfig(unittest.TestCase):
         """Set up test environment."""
         self.temp_dir = tempfile.mkdtemp()
         self.original_path = sys.path.copy()
+        self.config_file = os.path.join(self.temp_dir, 'config.py')
+        self.env_patcher = patch.dict(os.environ, {'PURE_DOWNLOADER_CONFIG_PATH': self.config_file})
+        self.env_patcher.start()
 
     def tearDown(self):
         """Clean up test environment."""
+        self.env_patcher.stop()
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
         sys.path = self.original_path
@@ -224,12 +231,10 @@ class TestValidateCurrentConfig(unittest.TestCase):
             self.assertIn("Error loading config", message)
 
     @patch('os.path.exists')
-    @patch('os.path.dirname')
-    @patch('os.path.abspath')
-    def test_validate_current_config_generic_error(self, mock_abspath, mock_dirname, mock_exists):
+    @patch('setup_config.get_config_file_path')
+    def test_validate_current_config_generic_error(self, mock_get_config_path, mock_exists):
         """Test validation with generic error."""
-        mock_exists.return_value = True
-        mock_dirname.side_effect = Exception("Generic error")
+        mock_get_config_path.side_effect = Exception("Generic error")
         
         is_valid, message = setup_config.validate_current_config()
         
@@ -244,9 +249,12 @@ class TestConfigFileOperations(unittest.TestCase):
         """Set up test environment."""
         self.temp_dir = tempfile.mkdtemp()
         self.config_file = os.path.join(self.temp_dir, 'config.py')
+        self.env_patcher = patch.dict(os.environ, {'PURE_DOWNLOADER_CONFIG_PATH': self.config_file})
+        self.env_patcher.start()
 
     def tearDown(self):
         """Clean up test environment."""
+        self.env_patcher.stop()
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
@@ -283,7 +291,7 @@ class TestUserInputHandling(unittest.TestCase):
     @patch('setup_config.input')
     @patch('builtins.print')
     @patch('os.path.exists', return_value=True)
-    @patch('builtins.open', new_callable=mock_open, read_data='PURE_API_KEY = "test"')
+    @patch('builtins.open', new_callable=mock_open, read_data='PURE_API_KEY = "test"\nBASE_API_URL = "https://test.elsevierpure.com/ws/api"\nCSV_FILE_PATH = "test.csv"\nMAX_DOWNLOADS = 3')
     def test_url_validation_warnings(self, mock_file, mock_exists, mock_print, mock_input):
         """Test URL validation warnings."""
         # Test HTTP instead of HTTPS
@@ -304,7 +312,7 @@ class TestUserInputHandling(unittest.TestCase):
     @patch('setup_config.input')
     @patch('builtins.print')
     @patch('os.path.exists', return_value=True)
-    @patch('builtins.open', new_callable=mock_open, read_data='PURE_API_KEY = "test"')
+    @patch('builtins.open', new_callable=mock_open, read_data='PURE_API_KEY = "test"\nBASE_API_URL = "https://test.elsevierpure.com/ws/api"\nCSV_FILE_PATH = "test.csv"\nMAX_DOWNLOADS = 3')
     def test_url_validation_ending(self, mock_file, mock_exists, mock_print, mock_input):
         """Test URL ending validation."""
         mock_input.side_effect = [

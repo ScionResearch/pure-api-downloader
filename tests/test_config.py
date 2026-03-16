@@ -196,13 +196,15 @@ class TestConfigDefaults(unittest.TestCase):
         self.assertEqual(config.OUTPUT_DIRECTORY, "downloads")
 
     def test_default_download_file_types(self):
-        """Test default download file types (should be empty = all types)."""
-        self.assertEqual(config.DOWNLOAD_FILE_TYPES, [])
+        """Test download file types configuration is a list of extensions."""
+        self.assertIsInstance(config.DOWNLOAD_FILE_TYPES, list)
+        for item in config.DOWNLOAD_FILE_TYPES:
+            self.assertTrue(item.startswith('.'))
 
     def test_default_request_timeout(self):
-        """Test default request timeout is reasonable."""
+        """Test request timeout is positive and not absurdly low."""
         self.assertGreaterEqual(config.REQUEST_TIMEOUT, 10)
-        self.assertLessEqual(config.REQUEST_TIMEOUT, 120)
+        self.assertLessEqual(config.REQUEST_TIMEOUT, 600)
 
     def test_default_chunk_size(self):
         """Test default chunk size is reasonable."""

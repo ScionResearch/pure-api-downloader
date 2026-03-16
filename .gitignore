@@ -9,6 +9,17 @@ downloads/
 *.xlsx
 *.xls
 
+# Generated workflow artifacts
+approved_candidates.csv
+approved_download_checkpoint.json
+approved_pilot_summary.md
+discovery_candidates.csv
+discovery_summary.md
+discovery_decay_candidates.csv
+discovery_decay_summary.md
+auto.pdf
+csv/*.csv
+
 # Python cache
 __pycache__/
 *.pyc
@@ -41,4 +52,4 @@ tmp/
 
 # Log files
 *.log
-csv/*
+

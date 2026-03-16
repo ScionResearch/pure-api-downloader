@@ -69,6 +69,45 @@ DOWNLOAD_CHUNK_SIZE = 8192
 
 
 # ============================================================================
+# Discovery / Review Settings
+# ============================================================================
+
+# Review-first discovery workflow outputs
+DISCOVERY_OUTPUT_CSV = "discovery_candidates.csv"
+DISCOVERY_SUMMARY_REPORT = "discovery_summary.md"
+DISCOVERY_APPROVED_OUTPUT_CSV = "approved_candidates.csv"
+
+# Search behaviour
+DISCOVERY_PAGE_SIZE = 25
+DISCOVERY_MAX_RESULTS_PER_KEYWORD = 100
+
+# Conservative access types considered safe for automatic PDF download later
+DISCOVERY_ALLOWED_ACCESS_TYPES = ["open", "public", "free", "openaccess", "oa"]
+
+# Forestry seed terms grouped by theme
+DISCOVERY_KEYWORD_THEMES = {
+    "general_forestry": ["forestry", "forest", "plantation", "silviculture", "timber", "wood"],
+    "species": ["cypress", "cupressus", "eucalyptus", "eucalypt", "douglas-fir", "redwood", "sequoia"],
+    "breeding_and_genetics": ["breeding", "genetics", "genomic", "provenance", "seed orchard", "clonal"],
+    "protection_and_biosecurity": ["biosecurity", "pest", "pathogen", "disease", "canker", "paropsis"],
+    "productivity_and_management": ["productivity", "growth model", "durability", "wood quality", "site mapping"],
+}
+
+
+# ============================================================================
+# Approved Pilot Download Settings
+# ============================================================================
+
+APPROVED_DOWNLOAD_INPUT_CSV = "approved_candidates.csv"
+APPROVED_DOWNLOAD_OUTPUT_DIR = "downloads/approved_pilot"
+APPROVED_DOWNLOAD_CHECKPOINT_FILE = "approved_download_checkpoint.json"
+APPROVED_DOWNLOAD_PILOT_SIZE = 25
+APPROVED_DOWNLOAD_RETRY_ATTEMPTS = 3
+APPROVED_DOWNLOAD_RETRY_DELAY_SECONDS = 1
+APPROVED_DOWNLOAD_SKIP_EXISTING = True
+
+
+# ============================================================================
 # Configuration Validation
 # ============================================================================
 
@@ -96,6 +135,21 @@ def validate_config():
     # Check CSV file
     if CSV_FILE_PATH == "your_file.csv":
         issues.append("CSV file path not set")
+
+    if DISCOVERY_PAGE_SIZE <= 0:
+        issues.append("DISCOVERY_PAGE_SIZE must be positive")
+
+    if DISCOVERY_MAX_RESULTS_PER_KEYWORD <= 0:
+        issues.append("DISCOVERY_MAX_RESULTS_PER_KEYWORD must be positive")
+
+    if APPROVED_DOWNLOAD_PILOT_SIZE <= 0:
+        issues.append("APPROVED_DOWNLOAD_PILOT_SIZE must be positive")
+
+    if APPROVED_DOWNLOAD_RETRY_ATTEMPTS <= 0:
+        issues.append("APPROVED_DOWNLOAD_RETRY_ATTEMPTS must be positive")
+
+    if APPROVED_DOWNLOAD_RETRY_DELAY_SECONDS < 0:
+        issues.append("APPROVED_DOWNLOAD_RETRY_DELAY_SECONDS cannot be negative")
     
     if issues:
         return False, "; ".join(issues)

@@ -47,7 +47,7 @@ def run_unit_tests(verbosity=2):
     suite = unittest.TestSuite()
     
     # Load specific test modules (excluding integration)
-    for test_module in ['test_config', 'test_setup_config', 'test_basic', 'test_download_pure_file']:
+    for test_module in ['test_config', 'test_setup_config', 'test_basic', 'test_download_pure_file', 'test_pure_discovery', 'test_pure_approved_downloader']:
         try:
             tests = loader.loadTestsFromName(test_module)
             suite.addTests(tests)
@@ -130,7 +130,9 @@ def main():
     print("  5. setup       - Run setup_config.py tests")
     print("  6. download    - Run download_pure_file.py tests")
     print("  7. basic       - Run basic functionality tests")
-    print("  8. smoke       - Quick smoke test")
+    print("  8. discovery   - Run pure_discovery.py tests")
+    print("  9. approved    - Run pure_approved_downloader.py tests")
+    print(" 10. smoke       - Quick smoke test")
     print()
 
     # Check for command line arguments
@@ -138,7 +140,7 @@ def main():
         choice = sys.argv[1].lower()
     else:
         try:
-            choice = input("Enter your choice (1-8 or name): ").strip().lower()
+            choice = input("Enter your choice (1-10 or name): ").strip().lower()
         except KeyboardInterrupt:
             print("\nTest execution cancelled.")
             sys.exit(0)
@@ -159,7 +161,11 @@ def main():
             success = run_specific_tests('download_pure_file')
         elif choice in ['7', 'basic']:
             success = run_specific_tests('basic')
-        elif choice in ['8', 'smoke']:
+        elif choice in ['8', 'discovery']:
+            success = run_specific_tests('pure_discovery')
+        elif choice in ['9', 'approved']:
+            success = run_specific_tests('pure_approved_downloader')
+        elif choice in ['10', 'smoke']:
             run_smoke_test()
             sys.exit(0)
         else:
