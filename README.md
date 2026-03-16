@@ -180,6 +180,64 @@ python -c "import pure_approved_downloader as p; print(p.run_approved_download_p
 python download_pure_file.py
 ```
 
+## Manual configuration reference
+
+If you prefer not to use the interactive setup helper:
+
+1. Copy the template:
+   ```bash
+   copy config.template.py config.py
+   ```
+2. Edit `config.py` with your settings.
+
+Minimal example:
+
+```python
+PURE_API_KEY = "your-api-key-here"
+BASE_API_URL = "https://yourinstitution.elsevierpure.com/ws/api"
+CSV_FILE_PATH = "example.csv"
+MAX_DOWNLOADS = None
+```
+
+### Common configuration options
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `PURE_API_KEY` | Your Pure API key | *Required* |
+| `BASE_API_URL` | Your Pure API endpoint | *Required* |
+| `CSV_FILE_PATH` | Path to CSV with Pure IDs | `"your_file.csv"` |
+| `ID_COLUMN` | CSV column with IDs | `"Pure ID"` |
+| `OUTPUT_DIRECTORY` | Where to save files | `"downloads"` |
+| `MAX_DOWNLOADS` | Limit for testing | `None` |
+| `DOWNLOAD_FILE_TYPES` | Direct-download file filter | configured in `config.py` |
+| `REQUEST_TIMEOUT` | Request timeout in seconds | configured in `config.py` |
+| `DOWNLOAD_CHUNK_SIZE` | Streaming chunk size | `8192` |
+
+## CSV format for the direct downloader
+
+Your direct-download CSV should contain a `Pure ID` column.
+
+```csv
+Pure ID,Title,Year
+27139086,"Forest Protection Research",2023
+46773789,"Cypress Stakes Study",2022
+14344978,"Genetic Resources",2021
+```
+
+Supported ID formats:
+
+- numeric Pure IDs such as `27139086`
+- UUIDs such as `12345678-1234-5678-1234-567812345678`
+
+## Direct downloader notes
+
+The original downloader still:
+
+1. accepts numeric Pure IDs or UUIDs
+2. extracts files from `electronicVersions`
+3. streams downloads in chunks
+4. saves files using sanitized titles and original extensions
+
 ## Configuration notes
 
 ### Discovery settings
