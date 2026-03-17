@@ -126,6 +126,7 @@ class TestApprovedDownloaderWorkflow(TestApprovedDownloader):
         response = Mock()
         response.status_code = status_code
         response.iter_content.return_value = [content]
+        response.headers = {"Content-Length": str(len(content))}
         return response
 
     def test_download_candidate_success(self):
@@ -190,3 +191,34 @@ class TestApprovedDownloaderWorkflow(TestApprovedDownloader):
         self.assertEqual(summary["requested_candidates"], 3)
         self.assertEqual(summary["processed_candidates"], 2)
         self.assertEqual(summary["completed"], 2)
+
+    @patch("pure_approved_downloader.test_api_connection")
+    @patch("pure_approved_downloader.download_candidate")
+    def test_run_approved_download_pilot_logs_progress(self, mock_download_candidate, mock_connection):
+        rows = [
+            self.approved_row(uuid="uuid-1", pure_id="1"),
+            self.approved_row(uuid="uuid-2", pure_id="2"),
+        ]
+        self.write_approved_csv(rows)
+        mock_connection.return_value = True
+        mock_download_candidate.side_effect = [
+            {"status": "completed", "output_path": os.path.join(self.output_dir, "one.pdf")},
+            {"status": "existing_file", "output_path": os.path.join(self.output_dir, "two.pdf")},
+        ]
+
+        with patch("pure_approved_downloader.log_debug") as mock_log_debug:
+            summary = pure_approved_downloader.run_approved_download_pilot(
+                review_csv_path=os.path.join(self.temp_dir, "review.csv"),
+                approved_csv_path=self.approved_csv,
+                output_dir=self.output_dir,
+                checkpoint_path=self.checkpoint_path,
+                pilot_size=2,
+                http_client=Mock(),
+            )
+
+        messages = [call.args[0] for call in mock_log_debug.call_args_list]
+        self.assertEqual(summary["completed"], 1)
+        self.assertEqual(summary["skipped"], 1)
+        self.assertTrue(any("Approved pilot plan" in message for message in messages))
+        self.assertTrue(any("[1/2] Processing" in message for message in messages))
+        self.assertTrue(any("[2/2] Result: existing_file" in message for message in messages))

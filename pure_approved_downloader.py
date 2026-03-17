@@ -56,6 +56,28 @@ APPROVED_DOWNLOAD_RETRY_DELAY_SECONDS = getattr(
 APPROVED_DOWNLOAD_SKIP_EXISTING = getattr(config, "APPROVED_DOWNLOAD_SKIP_EXISTING", True)
 
 
+def format_bytes(num_bytes: int) -> str:
+    size = float(num_bytes or 0)
+    units = ["B", "KB", "MB", "GB", "TB"]
+    unit_index = 0
+    while size >= 1024 and unit_index < len(units) - 1:
+        size /= 1024
+        unit_index += 1
+    if unit_index == 0:
+        return f"{int(size)} {units[unit_index]}"
+    return f"{size:.1f} {units[unit_index]}"
+
+
+def format_elapsed_seconds(start_time: float) -> str:
+    return f"{time.time() - start_time:.1f}s"
+
+
+def describe_candidate(candidate: dict) -> str:
+    title = (candidate.get("title") or "Untitled output").strip()
+    identity = candidate.get("pure_id") or candidate.get("uuid") or "unknown"
+    return f"{title} [{identity}]"
+
+
 def sanitize_filename_component(value: str, max_length: int = MAX_FILENAME_LENGTH) -> str:
     cleaned = "".join(char for char in (value or "") if char.isalnum() or char in (" ", "-", "_"))
     cleaned = "_".join(cleaned.split())
@@ -207,9 +229,13 @@ def download_candidate(
     url = candidate.get("first_open_pdf_url", "")
     uuid = candidate.get("uuid", "") or candidate.get("pure_id", "unknown")
     output_path = build_output_path(candidate, output_dir=output_dir)
+    candidate_label = describe_candidate(candidate)
+
+    os.makedirs(output_dir, exist_ok=True)
 
     skip_reason = should_skip_candidate(candidate, checkpoint, output_path)
     if skip_reason:
+        log_debug(f"Skipping {candidate_label}: {skip_reason.replace('_', ' ')}")
         checkpoint["skipped"][uuid] = make_checkpoint_entry(
             candidate, output_path=output_path, status=skip_reason
         )
@@ -224,6 +250,11 @@ def download_candidate(
 
     last_error = ""
     for attempt in range(1, APPROVED_DOWNLOAD_RETRY_ATTEMPTS + 1):
+        attempt_start = time.time()
+        log_debug(
+            f"Starting download for {candidate_label} -> {os.path.basename(output_path)} "
+            f"(attempt {attempt}/{APPROVED_DOWNLOAD_RETRY_ATTEMPTS})"
+        )
         try:
             response = http_client.get(
                 url,
@@ -232,12 +263,46 @@ def download_candidate(
                 timeout=REQUEST_TIMEOUT,
             )
             if response.status_code == 200:
+                total_size = int(response.headers.get("Content-Length") or 0)
+                if total_size > 0:
+                    log_debug(
+                        f"Connected for {candidate_label}; expected size {format_bytes(total_size)}"
+                    )
+                else:
+                    log_debug(
+                        f"Connected for {candidate_label}; file size not provided by server"
+                    )
+
                 with tempfile.NamedTemporaryFile(delete=False, dir=output_dir, suffix=".part") as temp_handle:
                     temp_path = temp_handle.name
+                    downloaded = 0
+                    next_progress_percent = 10
+                    next_progress_bytes = 5 * 1024 * 1024
                     for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):
                         if chunk:
                             temp_handle.write(chunk)
+                            downloaded += len(chunk)
+
+                            if total_size > 0:
+                                percent_complete = int((downloaded / total_size) * 100)
+                                current_milestone = min(100, (percent_complete // 10) * 10)
+                                if current_milestone >= next_progress_percent and current_milestone > 0:
+                                    log_debug(
+                                        f"  {candidate_label}: {current_milestone}% "
+                                        f"({format_bytes(downloaded)}/{format_bytes(total_size)})"
+                                    )
+                                    next_progress_percent = current_milestone + 10
+                            elif downloaded >= next_progress_bytes:
+                                log_debug(
+                                    f"  {candidate_label}: downloaded {format_bytes(downloaded)} so far"
+                                )
+                                next_progress_bytes += 5 * 1024 * 1024
                 os.replace(temp_path, output_path)
+                file_size = os.path.getsize(output_path)
+                log_debug(
+                    f"Completed download for {candidate_label} -> {output_path} "
+                    f"({format_bytes(file_size)}) in {format_elapsed_seconds(attempt_start)}"
+                )
                 checkpoint["completed"][uuid] = make_checkpoint_entry(
                     candidate, output_path=output_path, status="completed"
                 )
@@ -247,10 +312,21 @@ def download_candidate(
                 return {"status": "completed", "output_path": output_path}
 
             last_error = f"HTTP {response.status_code}"
+            log_debug(
+                f"Download failed for {candidate_label} on attempt {attempt}: {last_error}",
+                "WARNING",
+            )
         except Exception as exc:  # pragma: no cover - covered through mocks broadly
             last_error = str(exc)
+            log_debug(
+                f"Download error for {candidate_label} on attempt {attempt}: {last_error}",
+                "WARNING",
+            )
 
         if attempt < APPROVED_DOWNLOAD_RETRY_ATTEMPTS:
+            log_debug(
+                f"Retrying {candidate_label} after {APPROVED_DOWNLOAD_RETRY_DELAY_SECONDS}s..."
+            )
             time.sleep(APPROVED_DOWNLOAD_RETRY_DELAY_SECONDS)
 
     checkpoint["failed"][uuid] = make_checkpoint_entry(
@@ -278,6 +354,8 @@ def run_approved_download_pilot(
     if not test_api_connection(http_client=http_client):
         raise RuntimeError("API connection failed before pilot download")
 
+    os.makedirs(output_dir, exist_ok=True)
+
     if not os.path.exists(approved_csv_path):
         if not os.path.exists(review_csv_path):
             raise FileNotFoundError(
@@ -288,6 +366,20 @@ def run_approved_download_pilot(
     approved_candidates = load_approved_candidates(approved_csv_path)
     pilot_candidates = approved_candidates[:pilot_size]
     checkpoint = load_checkpoint(checkpoint_path)
+    workflow_start = time.time()
+
+    log_debug(
+        "Approved pilot plan: "
+        f"{len(approved_candidates)} approved candidates available, "
+        f"processing {len(pilot_candidates)} this run, "
+        f"output dir '{output_dir}'"
+    )
+    log_debug(
+        "Existing checkpoint state: "
+        f"{len(checkpoint.get('completed', {}))} completed, "
+        f"{len(checkpoint.get('failed', {}))} failed, "
+        f"{len(checkpoint.get('skipped', {}))} skipped"
+    )
 
     summary = {
         "requested_candidates": len(approved_candidates),
@@ -302,7 +394,11 @@ def run_approved_download_pilot(
         "results": [],
     }
 
-    for candidate in pilot_candidates:
+    for index, candidate in enumerate(pilot_candidates, start=1):
+        item_start = time.time()
+        log_debug(
+            f"[{index}/{len(pilot_candidates)}] Processing {describe_candidate(candidate)}"
+        )
         result = download_candidate(
             candidate,
             checkpoint=checkpoint,
@@ -322,6 +418,15 @@ def run_approved_download_pilot(
         else:
             summary["skipped"] += 1
 
+        log_debug(
+            f"[{index}/{len(pilot_candidates)}] Result: {result['status']} in {format_elapsed_seconds(item_start)} | "
+            f"completed={summary['completed']}, failed={summary['failed']}, skipped={summary['skipped']}"
+        )
+
+    log_debug(
+        f"Approved pilot run finished in {format_elapsed_seconds(workflow_start)} "
+        f"with {summary['completed']} completed, {summary['failed']} failed, {summary['skipped']} skipped"
+    )
     log_debug(f"Approved pilot download summary: {json.dumps(summary, indent=2)}")
     return summary
 

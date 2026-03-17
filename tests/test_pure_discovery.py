@@ -119,7 +119,8 @@ class TestHelpers(TestPureDiscovery):
 class TestDiscoveryWorkflow(TestPureDiscovery):
     @patch("pure_discovery.fetch_research_output_detail")
     @patch("pure_discovery.search_research_outputs_page")
-    def test_discover_candidates_deduplicates_and_merges_matches(self, mock_search_page, mock_detail):
+    @patch("pure_discovery.check_api_key")
+    def test_discover_candidates_deduplicates_and_merges_matches(self, mock_check_api_key, mock_search_page, mock_detail):
         forest_item = {
             "uuid": "uuid-123",
             "title": {"value": "Forest genetics report"},
@@ -135,6 +136,7 @@ class TestDiscoveryWorkflow(TestPureDiscovery):
             {"count": 1, "items": [cypress_item]},
         ]
         mock_detail.return_value = self.sample_output()
+        mock_check_api_key.return_value = True
 
         with patch("pure_discovery.log_debug"):
             candidates = pure_discovery.discover_candidates(
@@ -146,6 +148,43 @@ class TestDiscoveryWorkflow(TestPureDiscovery):
         self.assertIn("forest", candidates[0]["matched_terms"])
         self.assertIn("cypress", candidates[0]["matched_terms"])
         self.assertEqual(candidates[0]["download_status"], "downloadable_pdf")
+        mock_check_api_key.assert_called_once_with(pure_discovery.PURE_API_KEY, verbose=False)
+
+    @patch("pure_discovery.fetch_research_output_detail")
+    @patch("pure_discovery.search_research_outputs_page")
+    def test_discover_candidates_logs_progress(self, mock_search_page, mock_detail):
+        mock_search_page.side_effect = [
+            {
+                "count": 2,
+                "items": [
+                    {
+                        "uuid": "uuid-123",
+                        "title": {"value": "Forest genetics report"},
+                        "abstract": {"value": "Forestry breeding and cypress trials"},
+                    },
+                    {
+                        "uuid": "uuid-456",
+                        "title": {"value": "Forest health update"},
+                        "abstract": {"value": "Forest disease and pathology overview"},
+                    },
+                ],
+            }
+        ]
+        mock_detail.side_effect = [self.sample_output(), self.sample_output(title="Forest health update")]
+
+        with patch("pure_discovery.check_api_key", return_value=True), patch(
+            "pure_discovery.log_debug"
+        ) as mock_log_debug:
+            pure_discovery.discover_candidates(
+                keyword_themes={"theme": ["forest"]},
+                http_client=Mock(),
+            )
+
+        messages = [call.args[0] for call in mock_log_debug.call_args_list]
+        self.assertTrue(any("Discovery search plan" in message for message in messages))
+        self.assertTrue(any("[1/1] Searching discovery candidates" in message for message in messages))
+        self.assertTrue(any("Page 1: fetched 2 items" in message for message in messages))
+        self.assertTrue(any("Enrichment progress: 2/2" in message for message in messages))
 
     def test_write_candidates_csv_and_export_approved(self):
         candidates = [

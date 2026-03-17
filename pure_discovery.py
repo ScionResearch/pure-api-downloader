@@ -11,6 +11,7 @@ from __future__ import annotations
 import csv
 import json
 import os
+import time
 from collections import Counter
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
@@ -167,13 +168,18 @@ def is_allowed_access(access_value: str) -> bool:
     return any(token in normalized for token in DISCOVERY_ALLOWED_ACCESS_TYPES)
 
 
+def format_elapsed_seconds(start_time: float) -> str:
+    return f"{time.time() - start_time:.1f}s"
+
+
 def search_research_outputs_page(
     query: str,
     size: int,
     offset: int = 0,
+    validate_api_key: bool = True,
     http_client=requests,
 ) -> Optional[dict]:
-    if not check_api_key(PURE_API_KEY):
+    if validate_api_key and not check_api_key(PURE_API_KEY, verbose=False):
         return None
 
     url = f"{BASE_API_URL}/{DEFAULT_OBJECT_TYPE}"
@@ -326,27 +332,52 @@ def discover_candidates(
         max_results_per_keyword or DISCOVERY_MAX_RESULTS_PER_KEYWORD
     )
 
+    if not check_api_key(PURE_API_KEY, verbose=False):
+        raise RuntimeError("API key validation failed before discovery search")
+
     keywords = flatten_keyword_themes(resolved_keyword_themes)
     discovered: Dict[str, dict] = {}
+    workflow_start = time.time()
 
-    for keyword in keywords:
-        log_debug(f"Searching discovery candidates for keyword '{keyword}'")
+    log_debug(
+        "Discovery search plan: "
+        f"{len(keywords)} keywords, page size {resolved_page_size}, "
+        f"up to {resolved_max_results_per_keyword} results per keyword"
+    )
+
+    for keyword_index, keyword in enumerate(keywords, start=1):
+        keyword_start = time.time()
+        unique_before = len(discovered)
+        log_debug(
+            f"[{keyword_index}/{len(keywords)}] Searching discovery candidates for keyword '{keyword}'"
+        )
         offset = 0
         fetched = 0
+        page_number = 0
 
         while fetched < resolved_max_results_per_keyword:
+            page_number += 1
             page = search_research_outputs_page(
                 keyword,
                 resolved_page_size,
                 offset=offset,
+                validate_api_key=False,
                 http_client=http_client,
             )
             if not page:
+                log_debug(
+                    f"  Keyword '{keyword}': stopping early because the API returned no usable page",
+                    "WARNING",
+                )
                 break
 
             items = page.get("items", []) or []
             if not items:
+                log_debug(f"  Keyword '{keyword}': no more results after page {page_number}")
                 break
+
+            matched_on_page = 0
+            new_candidates_on_page = 0
 
             for item in items:
                 title = normalize_localized_text(item.get("title"))
@@ -355,9 +386,15 @@ def discover_candidates(
                 if not matched:
                     continue
 
+                matched_on_page += 1
+
                 uuid = item.get("uuid")
                 if not uuid:
                     continue
+
+                was_new_candidate = uuid not in discovered
+                if was_new_candidate:
+                    new_candidates_on_page += 1
 
                 entry = discovered.setdefault(
                     uuid,
@@ -377,13 +414,40 @@ def discover_candidates(
             fetched += len(items)
             offset += len(items)
             total_count = page.get("count")
+            max_for_keyword = min(
+                resolved_max_results_per_keyword,
+                total_count if isinstance(total_count, int) else resolved_max_results_per_keyword,
+            )
+            log_debug(
+                "  "
+                f"Page {page_number}: fetched {len(items)} items "
+                f"({min(fetched, max_for_keyword)}/{max_for_keyword} checked for this keyword), "
+                f"matched {matched_on_page}, new candidates {new_candidates_on_page}, "
+                f"unique total {len(discovered)}"
+            )
             if len(items) < resolved_page_size:
                 break
             if isinstance(total_count, int) and offset >= total_count:
                 break
 
+        added_for_keyword = len(discovered) - unique_before
+        log_debug(
+            f"[{keyword_index}/{len(keywords)}] Finished keyword '{keyword}': "
+            f"+{added_for_keyword} unique candidates in {format_elapsed_seconds(keyword_start)}"
+        )
+
     candidates = []
-    for uuid, entry in discovered.items():
+    total_candidates_to_enrich = len(discovered)
+    if total_candidates_to_enrich:
+        log_debug(
+            f"Enriching {total_candidates_to_enrich} unique candidates with file metadata..."
+        )
+
+    for index, (uuid, entry) in enumerate(discovered.items(), start=1):
+        if index == 1 or index % 25 == 0 or index == total_candidates_to_enrich:
+            log_debug(
+                f"  Enrichment progress: {index}/{total_candidates_to_enrich} candidates processed"
+            )
         detail = fetch_research_output_detail(uuid, http_client=http_client) or entry["search_item"]
         candidates.append(
             build_candidate_record(
@@ -395,6 +459,9 @@ def discover_candidates(
         )
 
     candidates.sort(key=lambda item: (-item["match_score"], item["title"].lower(), item["uuid"]))
+    log_debug(
+        f"Discovery search complete: {len(candidates)} unique candidates assembled in {format_elapsed_seconds(workflow_start)}"
+    )
     return candidates
 
 

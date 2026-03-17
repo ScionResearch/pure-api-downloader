@@ -527,26 +527,31 @@ def log_debug(message: str, level: str = "INFO") -> None:
         print(f"[{timestamp}] [{level}] {safe_message}")
 
 
-def check_api_key(api_key: str) -> bool:
+def check_api_key(api_key: str, verbose: bool = True) -> bool:
     """
     Check if the provided API key is valid (not empty or placeholder).
     Returns True if valid, False otherwise.
     """
-    log_debug("Checking API key validity...")
+    if verbose:
+        log_debug("Checking API key validity...")
     if not api_key:
-        log_debug("Error: PURE_API_KEY is empty or None", "ERROR")
+        if verbose:
+            log_debug("Error: PURE_API_KEY is empty or None", "ERROR")
         return False
     if api_key == "YOUR_API_KEY":
-        log_debug(
-            "Error: PURE_API_KEY is still the placeholder value 'YOUR_API_KEY'", "ERROR"
-        )
+        if verbose:
+            log_debug(
+                "Error: PURE_API_KEY is still the placeholder value 'YOUR_API_KEY'", "ERROR"
+            )
         return False
     if len(api_key) < 10:
-        log_debug(
-            f"Warning: API key seems short (length: {len(api_key)}). This might not be valid.",
-            "WARNING",
-        )
-    log_debug(f"API key appears valid (length: {len(api_key)})")
+        if verbose:
+            log_debug(
+                f"Warning: API key seems short (length: {len(api_key)}). This might not be valid.",
+                "WARNING",
+            )
+    if verbose:
+        log_debug(f"API key appears valid (length: {len(api_key)})")
     return True
 
 
