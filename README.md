@@ -1,324 +1,117 @@
-# Pure API Research Output Workflow
+# Pure API research output workflow
 
-This repository now supports a staged workflow for working with Elsevier Pure research outputs:
+This repository provides a **simple staged workflow** for finding and downloading research outputs from Elsevier Pure.
 
-1. **search the API with keywords**
-2. **generate a review CSV**
-3. **edit that CSV if needed**
-4. **download files from the reviewed/approved CSV**
+The workflow is intentionally designed for **semi-technical users**:
 
-It still includes the original direct CSV downloader, but the primary workflow is now the safer discovery → review → download pipeline.
+1. search the API with configured terms
+2. generate a review CSV
+3. review or edit that CSV
+4. download only the approved results
 
-## What the codebase does
+## Why this workflow exists
 
-- Search Pure research outputs by keyword
-- Enrich each result with file metadata from `electronicVersions`
-- Generate a CSV you can inspect and edit
-- Generate a summary markdown report for quick review
-- Download approved PDF files from the reviewed CSV
-- Resume interrupted download runs using a checkpoint file
-- Skip already downloaded files safely on reruns
-- Fall back to the original “download from a CSV of Pure IDs” workflow when needed
+The repository no longer depends on the old direct downloader.
 
-## Main workflow
+That older approach was more error-prone because it skipped the human review step.
+The current workflow is simpler, safer, and easier to explain.
 
-### 1. Configure the project
+## Quick start
 
-Use the interactive setup helper:
+1. Copy `.env.example` to `.env`
+2. Edit `.env` with your local settings
+3. Set `DISCOVERY_SEARCH_TERMS` to a comma-separated list of keywords or phrases
+4. Run the setup helper if you prefer prompts:
+   - `python setup_config.py`
+5. Run discovery:
+   - `python pure_discovery.py`
+6. Review `discovery_candidates.csv`
+7. Run the approved downloader:
+   - `python pure_approved_downloader.py`
 
-```bash
-python setup_config.py
-```
+## Main configuration values
 
-Or edit `config.py` directly.
+The main local configuration file is `.env`.
 
-Important settings in `config.py`:
+The values most users need are:
 
 - `PURE_API_KEY`
 - `BASE_API_URL`
-- `DISCOVERY_KEYWORD_THEMES`
-- `DISCOVERY_PAGE_SIZE`
-- `DISCOVERY_MAX_RESULTS_PER_KEYWORD`
-- `DISCOVERY_OUTPUT_CSV`
-- `DISCOVERY_SUMMARY_REPORT`
-- `APPROVED_DOWNLOAD_INPUT_CSV`
-- `APPROVED_DOWNLOAD_OUTPUT_DIR`
-- `APPROVED_DOWNLOAD_CHECKPOINT_FILE`
+- `DISCOVERY_SEARCH_TERMS`
 - `APPROVED_DOWNLOAD_PILOT_SIZE`
 
-### 2. Generate a discovery CSV from the API
+### Search terms in `.env`
 
-Run the discovery workflow:
+Search terms are provided as a comma-separated list.
 
-```bash
-python pure_discovery.py
+Example:
+
+```text
+DISCOVERY_SEARCH_TERMS=carbon sequestration,biosecurity,remote sensing
 ```
 
-This will:
+This is simpler than editing Python dictionaries or grouped keyword maps.
+If more advanced grouping is ever needed later, it can be added without changing the normal user workflow.
 
-1. test API connectivity
-2. search Pure using the configured keyword themes
-3. deduplicate matches
-4. enrich results with file metadata
-5. classify results such as:
-   - `downloadable_pdf`
-   - `has_non_pdf_only`
-   - `restricted_or_unknown_access`
-   - `no_files`
-6. write:
-   - `discovery_candidates.csv`
-   - `discovery_summary.md`
+## Key files
 
-### 3. Edit the generated CSV
+- `.env` — local machine-specific settings
+- `.env.example` — safe setup template
+- `config.py` — loads and validates settings from `.env`
+- `setup_config.py` — interactive setup helper
+- `pure_api_utils.py` — shared API and logging helpers
+- `pure_discovery.py` — discovery and review CSV generation
+- `pure_approved_downloader.py` — approved/proceed downloader with checkpointing
+- `docs/how_the_tool_works.md` — plain-language explanation of what happens at each step
 
-Open `discovery_candidates.csv` and review the rows.
+## Generated files
 
-Useful columns include:
+These are runtime artifacts, not source files:
 
-- `title`
-- `year`
-- `output_type`
-- `match_score`
-- `matched_terms`
-- `matched_fields`
-- `download_status`
-- `first_open_pdf_name`
-- `first_open_pdf_url`
-- `reviewer_decision`
-- `reviewer_notes`
+- `discovery_candidates.csv`
+- `discovery_summary.md`
+- `approved_candidates.csv`
+- `approved_download_checkpoint.json`
+- `downloads/approved_pilot/`
 
-You can edit the CSV manually to:
+## Lean repository guidance
 
-- remove rows you don’t want
-- add notes
-- explicitly mark rows with `reviewer_decision=approve`
+Safe files to remove when they are only generated outputs:
 
-If you don’t mark approvals, the approved downloader can still proceed after explicit confirmation by treating all `downloadable_pdf` rows as the current proceed set.
+- anything under `downloads/`
+- generated review CSVs and summaries
+- checkpoint files
 
-### 4. Download files from the reviewed CSV
+Files that are worth keeping:
 
-Run the approved downloader:
-
-```bash
-python pure_approved_downloader.py
-```
-
-This will:
-
-1. read `approved_candidates.csv` if it exists
-2. otherwise prepare it from `discovery_candidates.csv`
-3. download up to `APPROVED_DOWNLOAD_PILOT_SIZE` items
-4. save files into `downloads/approved_pilot`
-5. track state in `approved_download_checkpoint.json`
-
-On reruns it will:
-
-- skip completed items already in the checkpoint
-- skip existing files when configured to do so
-- resume cleanly after interruption
-
-## Alternative workflow: direct Pure ID CSV download
-
-If you already have a CSV containing a `Pure ID` column, you can still use the original downloader:
-
-```bash
-python download_pure_file.py
-```
-
-That workflow:
-
-- loads a CSV of Pure IDs
-- detects whether IDs resolve as research outputs
-- fetches `electronicVersions`
-- downloads the first suitable file it finds
-
-This is useful for targeted downloads, but for large discovery work the newer staged workflow is strongly recommended.
-
-## Current key files
-
-- `config.py` — live configuration
-- `config.template.py` — starter template
-- `setup_config.py` — interactive config helper
-- `pure_discovery.py` — keyword search and review CSV generation
-- `pure_approved_downloader.py` — approved/proceed download workflow with checkpointing
-- `download_pure_file.py` — original Pure ID downloader
-- `discovery_candidates.csv` — generated discovery CSV
-- `discovery_summary.md` — generated summary report
-- `approved_candidates.csv` — prepared approved/proceed CSV
-- `approved_download_checkpoint.json` — resumable download checkpoint
-- `downloads/approved_pilot/` — downloaded pilot files
-
-## Example commands
-
-### Run discovery with configured keywords
-
-```bash
-python pure_discovery.py
-```
-
-### Run discovery with a temporary focused keyword set
-
-```bash
-python -c "import pure_discovery as d; print(d.run_discovery_workflow(keyword_themes={'focus':['decay','durability','cypress']}))"
-```
-
-### Run the approved pilot downloader
-
-```bash
-python pure_approved_downloader.py
-```
-
-### Continue past the pilot size
-
-```bash
-python -c "import pure_approved_downloader as p; print(p.run_approved_download_pilot(pilot_size=257))"
-```
-
-### Use the original direct CSV downloader
-
-```bash
-python download_pure_file.py
-```
-
-## Manual configuration reference
-
-If you prefer not to use the interactive setup helper:
-
-1. Copy the template:
-   ```bash
-   copy config.template.py config.py
-   ```
-2. Edit `config.py` with your settings.
-
-Minimal example:
-
-```python
-PURE_API_KEY = "your-api-key-here"
-BASE_API_URL = "https://yourinstitution.elsevierpure.com/ws/api"
-CSV_FILE_PATH = "example.csv"
-MAX_DOWNLOADS = None
-```
-
-### Common configuration options
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `PURE_API_KEY` | Your Pure API key | *Required* |
-| `BASE_API_URL` | Your Pure API endpoint | *Required* |
-| `CSV_FILE_PATH` | Path to CSV with Pure IDs | `"your_file.csv"` |
-| `ID_COLUMN` | CSV column with IDs | `"Pure ID"` |
-| `OUTPUT_DIRECTORY` | Where to save files | `"downloads"` |
-| `MAX_DOWNLOADS` | Limit for testing | `None` |
-| `DOWNLOAD_FILE_TYPES` | Direct-download file filter | configured in `config.py` |
-| `REQUEST_TIMEOUT` | Request timeout in seconds | configured in `config.py` |
-| `DOWNLOAD_CHUNK_SIZE` | Streaming chunk size | `8192` |
-
-## CSV format for the direct downloader
-
-Your direct-download CSV should contain a `Pure ID` column.
-
-```csv
-Pure ID,Title,Year
-27139086,"Forest Protection Research",2023
-46773789,"Cypress Stakes Study",2022
-14344978,"Genetic Resources",2021
-```
-
-Supported ID formats:
-
-- numeric Pure IDs such as `27139086`
-- UUIDs such as `12345678-1234-5678-1234-567812345678`
-
-## Direct downloader notes
-
-The original downloader still:
-
-1. accepts numeric Pure IDs or UUIDs
-2. extracts files from `electronicVersions`
-3. streams downloads in chunks
-4. saves files using sanitized titles and original extensions
-
-## Configuration notes
-
-### Discovery settings
-
-- `DISCOVERY_KEYWORD_THEMES` controls what gets searched
-- `DISCOVERY_PAGE_SIZE` controls API page size
-- `DISCOVERY_MAX_RESULTS_PER_KEYWORD` caps search breadth
-- `DISCOVERY_ALLOWED_ACCESS_TYPES` determines what counts as safe/open for download
-
-### Approved download settings
-
-- `APPROVED_DOWNLOAD_PILOT_SIZE` controls the default number downloaded per run
-- `APPROVED_DOWNLOAD_RETRY_ATTEMPTS` controls retries
-- `APPROVED_DOWNLOAD_RETRY_DELAY_SECONDS` controls retry delay
-- `APPROVED_DOWNLOAD_SKIP_EXISTING` prevents duplicate file writes
+- `.env.example`
+- `docs/how_the_tool_works.md`
+- `pure_api_cheatsheet.md`
+- `tests/TEST_README.md`
 
 ## Testing
 
-Run everything:
+Run all tests:
 
-```bash
-cd tests
-python run_tests.py all
+```text
+python tests/run_tests.py all
 ```
 
-Run the discovery tests only:
+Run a specific suite:
 
-```bash
-cd tests
-python run_tests.py discovery
+```text
+python tests/run_tests.py discovery
+python tests/run_tests.py approved
+python tests/run_tests.py api
 ```
-
-Run the approved downloader tests only:
-
-```bash
-cd tests
-python run_tests.py approved
-```
-
-Run the direct downloader tests only:
-
-```bash
-cd tests
-python run_tests.py download
-```
-
-## Troubleshooting
-
-### API connection problems
-
-- confirm `PURE_API_KEY`
-- confirm `BASE_API_URL` ends with `/ws/api`
-- check network access to the Pure instance
-
-### Discovery is too broad
-
-- reduce `DISCOVERY_MAX_RESULTS_PER_KEYWORD`
-- narrow `DISCOVERY_KEYWORD_THEMES`
-- use more specific terms such as `decay`, `stakes`, `decking`, `heartwood`
-
-### Downloads stop midway
-
-- rerun `pure_approved_downloader.py`
-- it will resume using `approved_download_checkpoint.json`
-
-### Wrong files are being prioritized
-
-- adjust keyword themes
-- inspect `matched_terms`, `match_score`, and `download_status` in the discovery CSV
 
 ## Security
 
-- `config.py` contains secrets and should not be committed
-- keep API credentials local
-- review discovery results before bulk downloading when possible
+- keep `.env` local
+- do not commit real API credentials
+- review results before downloading approved files
 
-## Resources
+## More detail
 
+- `docs/how_the_tool_works.md`
 - `pure_api_cheatsheet.md`
-
----
-
-**Status:** Active workflow: search → review CSV → approved/proceed download  
-**Repository:** `pure-api-downloader`

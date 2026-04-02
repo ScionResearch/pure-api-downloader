@@ -1,9 +1,4 @@
-"""
-Pytest configuration and fixtures for Pure API downloader tests.
-
-This file provides pytest-specific configurations and shared fixtures
-for testing the Pure API downloader functionality.
-"""
+"""Pytest configuration and shared fixtures for the staged Pure workflows."""
 
 import pytest
 import tempfile
@@ -18,8 +13,8 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-# Import the module we're testing
-from pure_downloader import download_pure_file
+# Import the shared helper module used by the staged workflows
+from pure_downloader import pure_api_utils
 
 
 @pytest.fixture
@@ -40,8 +35,8 @@ def mock_api_config():
         "base_url": "https://test.elsevierpure.com/ws/api",
     }
 
-    with patch.object(download_pure_file, "PURE_API_KEY", test_config["api_key"]):
-        with patch.object(download_pure_file, "BASE_API_URL", test_config["base_url"]):
+    with patch.object(pure_api_utils.config, "PURE_API_KEY", test_config["api_key"]):
+        with patch.object(pure_api_utils.config, "BASE_API_URL", test_config["base_url"]):
             yield test_config
 
 

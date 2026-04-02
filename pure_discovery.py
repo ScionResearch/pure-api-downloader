@@ -1,8 +1,8 @@
 """
-Pure API Forestry Discovery Tool
-================================
+Pure API discovery workflow
+===========================
 
-Searches the Pure API for forestry-themed research outputs, enriches them with
+Searches the Pure API with user-supplied search terms, enriches results with
 file metadata, and generates review artifacts before any download step.
 """
 
@@ -22,7 +22,7 @@ try:
 except ImportError as exc:  # pragma: no cover - matches existing repo style
     raise SystemExit("config.py not found. Please create or configure it first.") from exc
 
-from download_pure_file import check_api_key, log_debug, test_api_connection
+from pure_api_utils import check_api_key, log_debug, test_api_connection
 
 BASE_API_URL = config.BASE_API_URL
 PURE_API_KEY = config.PURE_API_KEY
@@ -46,55 +46,8 @@ DISCOVERY_ALLOWED_ACCESS_TYPES = {
     )
 }
 
-DEFAULT_KEYWORD_THEMES = {
-    "general_forestry": [
-        "forestry",
-        "forest",
-        "plantation",
-        "silviculture",
-        "timber",
-        "wood",
-    ],
-    "species": [
-        "cypress",
-        "cupressus",
-        "eucalyptus",
-        "eucalypt",
-        "douglas-fir",
-        "redwood",
-        "sequoia",
-        "radiata",
-        "nitens",
-        "fastigata",
-        "regnans",
-    ],
-    "breeding_and_genetics": [
-        "breeding",
-        "genetics",
-        "genomic",
-        "provenance",
-        "seed orchard",
-        "clonal",
-    ],
-    "protection_and_biosecurity": [
-        "biosecurity",
-        "pest",
-        "pathogen",
-        "disease",
-        "canker",
-        "paropsis",
-    ],
-    "productivity_and_management": [
-        "productivity",
-        "growth model",
-        "durability",
-        "wood quality",
-        "site mapping",
-    ],
-}
-DISCOVERY_KEYWORD_THEMES = getattr(
-    config, "DISCOVERY_KEYWORD_THEMES", DEFAULT_KEYWORD_THEMES
-)
+DISCOVERY_SEARCH_TERMS = list(getattr(config, "DISCOVERY_SEARCH_TERMS", []))
+DISCOVERY_KEYWORD_THEMES = getattr(config, "DISCOVERY_KEYWORD_THEMES", {})
 
 REVIEW_DECISION_COLUMN = "reviewer_decision"
 REVIEW_NOTES_COLUMN = "reviewer_notes"
@@ -150,6 +103,12 @@ def flatten_keyword_themes(keyword_themes: Mapping[str, Sequence[str]]) -> List[
                 seen.add(cleaned)
                 flattened.append(cleaned)
     return flattened
+
+
+def build_keyword_themes_from_search_terms(search_terms: Sequence[str]) -> Dict[str, List[str]]:
+    """Convert a flat list of configured search terms into the grouped internal shape."""
+    cleaned_terms = [term.strip() for term in search_terms if term and term.strip()]
+    return {"configured_terms": cleaned_terms} if cleaned_terms else {}
 
 
 def keyword_matches_content(keyword: str, title: str, abstract: str) -> Tuple[bool, Set[str]]:
@@ -322,15 +281,28 @@ def build_candidate_record(
 
 def discover_candidates(
     keyword_themes: Optional[Mapping[str, Sequence[str]]] = None,
+    search_terms: Optional[Sequence[str]] = None,
     page_size: Optional[int] = None,
     max_results_per_keyword: Optional[int] = None,
     http_client=requests,
 ) -> List[dict]:
-    resolved_keyword_themes: Mapping[str, Sequence[str]] = keyword_themes or DISCOVERY_KEYWORD_THEMES
+    # The discovery workflow is deliberately split into small steps so logs stay
+    # understandable for users: search -> merge duplicates -> enrich -> classify.
+    resolved_keyword_themes: Mapping[str, Sequence[str]] = (
+        keyword_themes
+        or build_keyword_themes_from_search_terms(search_terms or DISCOVERY_SEARCH_TERMS)
+        or DISCOVERY_KEYWORD_THEMES
+    )
     resolved_page_size = page_size or DISCOVERY_PAGE_SIZE
     resolved_max_results_per_keyword = (
         max_results_per_keyword or DISCOVERY_MAX_RESULTS_PER_KEYWORD
     )
+
+    if not resolved_keyword_themes:
+        raise RuntimeError(
+            "No discovery search terms configured. Set DISCOVERY_SEARCH_TERMS in .env "
+            "or pass search_terms/keyword_themes explicitly."
+        )
 
     if not check_api_key(PURE_API_KEY, verbose=False):
         raise RuntimeError("API key validation failed before discovery search")
@@ -396,6 +368,8 @@ def discover_candidates(
                 if was_new_candidate:
                     new_candidates_on_page += 1
 
+                # One output can match multiple keywords. We merge matches into a
+                # single candidate record so the review CSV stays human-friendly.
                 entry = discovered.setdefault(
                     uuid,
                     {
@@ -527,7 +501,7 @@ def generate_summary_report(candidates: Sequence[dict], output_path: str = DISCO
     counts = build_summary_counts(candidates)
 
     lines = [
-        "# Forestry Discovery Summary",
+        "# Research Output Discovery Summary",
         "",
         f"Total candidates: **{counts['total_candidates']}**",
         "",
@@ -600,14 +574,24 @@ def run_discovery_workflow(
     output_csv_path: str = DISCOVERY_OUTPUT_CSV,
     summary_report_path: str = DISCOVERY_SUMMARY_REPORT,
     keyword_themes: Optional[Dict[str, Sequence[str]]] = None,
+    search_terms: Optional[Sequence[str]] = None,
     http_client=requests,
 ) -> dict:
-    log_debug("=== Starting forestry discovery workflow ===")
+    log_debug("=== Starting discovery workflow ===")
 
-    if not test_api_connection(http_client=http_client):
+    if not test_api_connection(
+        http_client=http_client,
+        api_key=PURE_API_KEY,
+        base_api_url=BASE_API_URL,
+        object_type=DEFAULT_OBJECT_TYPE,
+    ):
         raise RuntimeError("API connection failed. Check config.py before discovery.")
 
-    candidates = discover_candidates(keyword_themes=keyword_themes, http_client=http_client)
+    candidates = discover_candidates(
+        keyword_themes=keyword_themes,
+        search_terms=search_terms,
+        http_client=http_client,
+    )
     write_candidates_csv(candidates, output_path=output_csv_path)
     generate_summary_report(candidates, output_path=summary_report_path)
 

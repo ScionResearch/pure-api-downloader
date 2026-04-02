@@ -1,47 +1,49 @@
-# Pure API Cheatsheet
+# Pure API cheatsheet
 
-A concise reference for this repository's Pure API workflows.
+A short reference for the current staged workflow.
 
-## Core ideas
+## Main idea
 
-- Research outputs are fetched from `research-outputs`
-- File metadata is typically embedded in `electronicVersions`
-- Open/downloadable files are detected from `accessType` plus file extension
-- The staged workflow is:
-  1. search with keywords
-  2. generate a review CSV
-  3. edit/review the CSV
-  4. download approved rows
+The tool now works in two deliberate stages:
+
+1. discovery and review preparation
+2. approved download
+
+This keeps the workflow simple and safer for semi-technical users.
 
 ## Important endpoints
 
 - `GET /ws/api/research-outputs`
   - keyword search
-- `GET /ws/api/research-outputs/{id_or_uuid}`
-  - fetch a single research output and its `electronicVersions`
+- `GET /ws/api/research-outputs/{uuid}`
+  - fetch a full research output including `electronicVersions`
 - `GET /ws/api/research-outputs/{uuid}/files/{fileId}/{filename}`
   - download a file
 
-## Repository scripts
+## Main scripts
 
-- `pure_discovery.py`
-  - keyword-based discovery and review CSV generation
-- `pure_approved_downloader.py`
-  - approved/proceed downloader with checkpointing
-- `download_pure_file.py`
-  - direct downloader for a CSV with a `Pure ID` column
 - `setup_config.py`
-  - interactive configuration helper
+  - interactive `.env` setup
+- `pure_discovery.py`
+  - search the API and build review outputs
+- `pure_approved_downloader.py`
+  - download the approved results with checkpointing
+- `pure_api_utils.py`
+  - shared logging and API validation helpers
 
-## Common file outputs
+## Main local config
 
-- `discovery_candidates.csv`
-- `discovery_summary.md`
-- `approved_candidates.csv`
-- `approved_download_checkpoint.json`
-- `downloads/approved_pilot/`
+Use `.env` for local settings.
 
-These are generated artifacts and are ignored by git.
+The most important value for search behavior is:
+
+- `DISCOVERY_SEARCH_TERMS`
+
+Example:
+
+```text
+DISCOVERY_SEARCH_TERMS=carbon sequestration,biosecurity,remote sensing
+```
 
 ## Typical usage
 
@@ -57,14 +59,8 @@ python pure_discovery.py
 python pure_approved_downloader.py
 ```
 
-### Direct CSV download
-
-```text
-python download_pure_file.py
-```
-
 ## Notes
 
-- Numeric Pure IDs can often be queried directly
-- Prefer review-first discovery before bulk downloading
-- Keep `config.py` local because it contains secrets
+- prefer the review-first discovery workflow before downloading files
+- keep `.env` local because it contains secrets
+- see `docs/how_the_tool_works.md` for the detailed explanation

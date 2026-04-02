@@ -23,7 +23,7 @@ try:
 except ImportError as exc:  # pragma: no cover - align with repo style
     raise SystemExit("config.py not found. Please create or configure it first.") from exc
 
-from download_pure_file import check_api_key, log_debug, test_api_connection
+from pure_api_utils import check_api_key, log_debug, test_api_connection
 from pure_discovery import (
     APPROVED_DECISIONS,
     DISCOVERY_APPROVED_OUTPUT_CSV,
@@ -140,6 +140,9 @@ def create_proceed_candidates_from_review_csv(
     If no approval decisions are present, treat all downloadable PDF rows as the
     confirmed proceed set for the current run.
     """
+    # This helper keeps the workflow forgiving for users. If they reviewed the
+    # discovery CSV but did not export a separate approved CSV yet, we can still
+    # build a safe proceed list from the reviewed file.
     if not os.path.exists(review_csv_path):
         raise FileNotFoundError(f"Review CSV not found: {review_csv_path}")
 
@@ -233,6 +236,8 @@ def download_candidate(
 
     os.makedirs(output_dir, exist_ok=True)
 
+    # We check skip conditions before any network call so reruns stay quick and
+    # users do not waste time redownloading completed files.
     skip_reason = should_skip_candidate(candidate, checkpoint, output_path)
     if skip_reason:
         log_debug(f"Skipping {candidate_label}: {skip_reason.replace('_', ' ')}")
@@ -273,6 +278,8 @@ def download_candidate(
                         f"Connected for {candidate_label}; file size not provided by server"
                     )
 
+                # Temporary files make incomplete downloads safer because a
+                # broken transfer does not leave a misleading final PDF behind.
                 with tempfile.NamedTemporaryFile(delete=False, dir=output_dir, suffix=".part") as temp_handle:
                     temp_path = temp_handle.name
                     downloaded = 0
@@ -351,11 +358,17 @@ def run_approved_download_pilot(
 
     if not check_api_key(PURE_API_KEY):
         raise RuntimeError("API key validation failed")
-    if not test_api_connection(http_client=http_client):
+    if not test_api_connection(
+        http_client=http_client,
+        api_key=PURE_API_KEY,
+        base_api_url=BASE_API_URL,
+    ):
         raise RuntimeError("API connection failed before pilot download")
 
     os.makedirs(output_dir, exist_ok=True)
 
+    # If an approved CSV is missing, we can derive a proceed set from the review
+    # CSV. This makes the workflow more forgiving without skipping the review step.
     if not os.path.exists(approved_csv_path):
         if not os.path.exists(review_csv_path):
             raise FileNotFoundError(

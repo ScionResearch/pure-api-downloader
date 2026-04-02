@@ -39,7 +39,7 @@ class TestPureDiscovery(unittest.TestCase):
         self.max_results_patcher.stop()
         shutil.rmtree(self.temp_dir)
 
-    def sample_output(self, title="Forest genetics report", abstract="Forestry breeding and cypress trials"):
+    def sample_output(self, title="Research output report", abstract="Genetics and remote sensing trials"):
         return {
             "uuid": "uuid-123",
             "pureId": "98765",
@@ -123,13 +123,13 @@ class TestDiscoveryWorkflow(TestPureDiscovery):
     def test_discover_candidates_deduplicates_and_merges_matches(self, mock_check_api_key, mock_search_page, mock_detail):
         forest_item = {
             "uuid": "uuid-123",
-            "title": {"value": "Forest genetics report"},
-            "abstract": {"value": "Forestry breeding and cypress trials"},
+            "title": {"value": "Research output report"},
+            "abstract": {"value": "Genetics and remote sensing trials"},
         }
         cypress_item = {
             "uuid": "uuid-123",
-            "title": {"value": "Forest genetics report"},
-            "abstract": {"value": "Forestry breeding and cypress trials"},
+            "title": {"value": "Research output report"},
+            "abstract": {"value": "Genetics and remote sensing trials"},
         }
         mock_search_page.side_effect = [
             {"count": 1, "items": [forest_item]},
@@ -140,13 +140,13 @@ class TestDiscoveryWorkflow(TestPureDiscovery):
 
         with patch("pure_discovery.log_debug"):
             candidates = pure_discovery.discover_candidates(
-                keyword_themes={"theme": ["forest", "cypress"]},
+                keyword_themes={"theme": ["genetics", "remote sensing"]},
                 http_client=Mock(),
             )
 
         self.assertEqual(len(candidates), 1)
-        self.assertIn("forest", candidates[0]["matched_terms"])
-        self.assertIn("cypress", candidates[0]["matched_terms"])
+        self.assertIn("genetics", candidates[0]["matched_terms"])
+        self.assertIn("remote sensing", candidates[0]["matched_terms"])
         self.assertEqual(candidates[0]["download_status"], "downloadable_pdf")
         mock_check_api_key.assert_called_once_with(pure_discovery.PURE_API_KEY, verbose=False)
 
@@ -159,24 +159,24 @@ class TestDiscoveryWorkflow(TestPureDiscovery):
                 "items": [
                     {
                         "uuid": "uuid-123",
-                        "title": {"value": "Forest genetics report"},
-                        "abstract": {"value": "Forestry breeding and cypress trials"},
+                        "title": {"value": "Research output report"},
+                        "abstract": {"value": "Genetics and remote sensing trials"},
                     },
                     {
                         "uuid": "uuid-456",
-                        "title": {"value": "Forest health update"},
-                        "abstract": {"value": "Forest disease and pathology overview"},
+                        "title": {"value": "Research health update"},
+                        "abstract": {"value": "Remote sensing and disease overview"},
                     },
                 ],
             }
         ]
-        mock_detail.side_effect = [self.sample_output(), self.sample_output(title="Forest health update")]
+        mock_detail.side_effect = [self.sample_output(), self.sample_output(title="Research health update")]
 
         with patch("pure_discovery.check_api_key", return_value=True), patch(
             "pure_discovery.log_debug"
         ) as mock_log_debug:
             pure_discovery.discover_candidates(
-                keyword_themes={"theme": ["forest"]},
+                keyword_themes={"theme": ["remote sensing"]},
                 http_client=Mock(),
             )
 
@@ -233,7 +233,7 @@ class TestDiscoveryWorkflow(TestPureDiscovery):
         self.assertTrue(os.path.exists(report_path))
         with open(report_path, "r", encoding="utf-8") as handle:
             content = handle.read()
-        self.assertIn("Forestry Discovery Summary", content)
+        self.assertIn("Research Output Discovery Summary", content)
         self.assertIn("downloadable_pdf", content)
         self.assertIn("forest", content)
 

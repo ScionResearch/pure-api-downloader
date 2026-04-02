@@ -7,6 +7,7 @@ Tests configuration validation and settings.
 import unittest
 import sys
 import os
+import importlib
 from unittest.mock import patch, Mock
 
 # Add parent directory to path
@@ -116,19 +117,25 @@ class TestConfigValidation(unittest.TestCase):
         finally:
             config.PURE_API_KEY = original_api_key
 
-    def test_validate_config_placeholder_csv(self):
-        """Test validation with placeholder CSV path."""
+    def test_validate_config_ignores_legacy_direct_download_placeholders(self):
+        """Legacy direct-download placeholders should not block the staged workflow."""
+        original_api_key = config.PURE_API_KEY
+        original_base_url = config.BASE_API_URL
         original_csv = config.CSV_FILE_PATH
-        
+
         try:
+            config.PURE_API_KEY = "valid-api-key-12345"
+            config.BASE_API_URL = "https://test.elsevierpure.com/ws/api"
             config.CSV_FILE_PATH = "your_file.csv"
-            
+
             is_valid, message = config.validate_config()
-            
-            self.assertFalse(is_valid)
-            self.assertIn("CSV file path not set", message)
-            
+
+            self.assertTrue(is_valid)
+            self.assertEqual(message, "Configuration valid")
+
         finally:
+            config.PURE_API_KEY = original_api_key
+            config.BASE_API_URL = original_base_url
             config.CSV_FILE_PATH = original_csv
 
 
@@ -176,6 +183,11 @@ class TestConfigSettings(unittest.TestCase):
         self.assertIsInstance(config.REQUEST_TIMEOUT, int)
         self.assertGreater(config.REQUEST_TIMEOUT, 0)
 
+    def test_discovery_search_terms_exists(self):
+        """Test that discovery search terms are available as a list."""
+        self.assertTrue(hasattr(config, 'DISCOVERY_SEARCH_TERMS'))
+        self.assertIsInstance(config.DISCOVERY_SEARCH_TERMS, list)
+
     def test_download_chunk_size_exists(self):
         """Test that download chunk size is defined."""
         self.assertTrue(hasattr(config, 'DOWNLOAD_CHUNK_SIZE'))
@@ -210,6 +222,32 @@ class TestConfigDefaults(unittest.TestCase):
         """Test default chunk size is reasonable."""
         # Common chunk sizes are 4KB, 8KB, or 16KB
         self.assertIn(config.DOWNLOAD_CHUNK_SIZE, [4096, 8192, 16384])
+
+
+class TestEnvironmentLoading(unittest.TestCase):
+    """Test that config can load values from a local .env file."""
+
+    def test_env_file_override_is_loaded(self):
+        env_content = (
+            "PURE_API_KEY=env-api-key-12345\n"
+            "BASE_API_URL=https://env.elsevierpure.com/ws/api\n"
+            "DISCOVERY_SEARCH_TERMS=carbon,remote sensing\n"
+            "APPROVED_DOWNLOAD_PILOT_SIZE=12\n"
+        )
+
+        with patch.dict(os.environ, {"PURE_DOWNLOADER_ENV_PATH": "test.env"}, clear=True):
+            with patch("pathlib.Path.exists", return_value=True), patch(
+                "pathlib.Path.read_text",
+                return_value=env_content,
+            ):
+                reloaded = importlib.reload(config)
+
+        self.assertEqual(reloaded.PURE_API_KEY, "env-api-key-12345")
+        self.assertEqual(reloaded.BASE_API_URL, "https://env.elsevierpure.com/ws/api")
+        self.assertEqual(reloaded.DISCOVERY_SEARCH_TERMS, ["carbon", "remote sensing"])
+        self.assertEqual(reloaded.APPROVED_DOWNLOAD_PILOT_SIZE, 12)
+
+        importlib.reload(config)
 
 
 if __name__ == '__main__':

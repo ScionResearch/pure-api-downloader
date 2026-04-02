@@ -1,5 +1,7 @@
-# Configuration files with sensitive API keys
-config.py
+# Local environment files with sensitive API keys
+.env
+.env.*
+!.env.example
 
 # Downloaded files
 downloads/
